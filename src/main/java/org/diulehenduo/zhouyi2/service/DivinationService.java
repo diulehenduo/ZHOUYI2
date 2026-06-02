@@ -1,8 +1,10 @@
 package org.diulehenduo.zhouyi2.service;
 
+import org.diulehenduo.zhouyi2.entity.DivinationRecord;
 import org.diulehenduo.zhouyi2.entity.HexagramResult;
 import org.diulehenduo.zhouyi2.entity.Yao;
 import org.diulehenduo.zhouyi2.model.response.DivinationResponse;
+import org.diulehenduo.zhouyi2.repository.DivinationRecordRepository;
 import org.diulehenduo.zhouyi2.util.HexagramDictionary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,10 +36,13 @@ public class DivinationService {
 
     private final YaoGenerator yaoGenerator;
     private final LlmService llmService;
+    private final DivinationRecordRepository recordRepository;
 
-    public DivinationService(YaoGenerator yaoGenerator, LlmService llmService) {
+    public DivinationService(YaoGenerator yaoGenerator, LlmService llmService,
+                             DivinationRecordRepository recordRepository) {
         this.yaoGenerator = yaoGenerator;
         this.llmService = llmService;
+        this.recordRepository = recordRepository;
     }
 
     /**
@@ -86,7 +91,16 @@ public class DivinationService {
         String analysis = llmService.chat(prompt);
 
         // 6. 生成响应 DTO
-        return buildResponse(name, matter, result, analysis);
+        DivinationResponse response = buildResponse(name, matter, result, analysis);
+
+        // 7. 保存占卜记录到数据库
+        try {
+            saveRecord(name, matter, response);
+        } catch (Exception e) {
+            log.warn("保存占卜记录失败: {}", e.getMessage());
+        }
+
+        return response;
     }
 
     /**
@@ -241,5 +255,36 @@ public class DivinationService {
         sb.append("（注：此为系统自动解读，如需更深入的分析，请配置大模型 API Key）");
 
         return sb.toString();
+    }
+
+    /**
+     * 保存占卜记录到数据库
+     */
+    private void saveRecord(String name, String matter, DivinationResponse resp) {
+        DivinationRecord record = new DivinationRecord();
+        record.setName(name);
+        record.setMatter(matter);
+
+        record.setOriginalNumber(resp.getOriginalNumber());
+        record.setOriginalName(resp.getOriginalName());
+        record.setOriginalSymbol(resp.getOriginalSymbol());
+        record.setOriginalJudgment(resp.getOriginalJudgment());
+
+        if (resp.getChangedNumber() != null) {
+            record.setChangedNumber(resp.getChangedNumber());
+            record.setChangedName(resp.getChangedName());
+            record.setChangedSymbol(resp.getChangedSymbol());
+        }
+
+        if (resp.getMovingYaoDescriptions() != null && !resp.getMovingYaoDescriptions().isEmpty()) {
+            record.setMovingYaos(String.join("、", resp.getMovingYaoDescriptions()));
+        }
+
+        record.setAnalysis(resp.getAnalysis());
+        record.setLlmUsed(resp.isLlmUsed());
+
+        recordRepository.save(record);
+        log.info("占卜记录已保存, id={}, name={}, 本卦={}",
+                record.getId(), name, resp.getOriginalName());
     }
 }
