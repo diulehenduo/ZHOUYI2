@@ -8,6 +8,7 @@ import org.diulehenduo.zhouyi2.service.DivinationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -29,23 +30,27 @@ public class DivinationController {
      * 执行占卜
      * <p>
      * 接收用户姓名和测算事由，返回卦象解读结果。
+     * 需要登录才能使用。
      * </p>
      *
      * @param request 请求体：{ "name": "张三", "matter": "求事业" }
+     * @param authentication 当前登录用户信息
      * @return 卦象结果与大模型解读
      */
     @PostMapping("/divination")
     public ResponseEntity<ApiResponse<DivinationResponse>> divination(
-            @Valid @RequestBody DivinationRequest request) {
+            @Valid @RequestBody DivinationRequest request,
+            Authentication authentication) {
 
-        log.info("占卜请求: name={}, matter={}", request.getName(), request.getMatter());
+        String currentUser = authentication.getName();
+        log.info("占卜请求: 用户={}, name={}, matter={}", currentUser, request.getName(), request.getMatter());
 
         try {
             DivinationResponse result = divinationService.performDivination(
                     request.getName(), request.getMatter());
 
-            log.info("占卜完成: name={}, 本卦={}, llmUsed={}",
-                    request.getName(), result.getOriginalName(), result.isLlmUsed());
+            log.info("占卜完成: 用户={}, name={}, 本卦={}, llmUsed={}",
+                    currentUser, request.getName(), result.getOriginalName(), result.isLlmUsed());
 
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
